@@ -9,14 +9,19 @@ const PORT = process.env.PORT || 3000;
 // Serve static frontend files
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ✅ Fetch top coins with full metrics
+// Endpoint for top coins with full metrics
 app.get('/api/crypto-data', async (req, res) => {
   const vs_currency = req.query.vs_currency || 'usd';
   const limit = parseInt(req.query.limit) || 50;
   const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=${vs_currency}&order=market_cap_desc&per_page=${limit}&page=1&sparkline=false`;
 
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0'
+      }
+    });
+
     const data = await response.json();
 
     const processed = data.map((coin, index) => {
@@ -47,13 +52,18 @@ app.get('/api/crypto-data', async (req, res) => {
   }
 });
 
-// ✅ Market summary endpoint
+// Market sentiment summary
 app.get('/api/market-summary', async (req, res) => {
   const vs_currency = req.query.vs_currency || 'usd';
   const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=${vs_currency}&order=market_cap_desc&per_page=50&page=1&sparkline=false`;
 
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0'
+      }
+    });
+
     const data = await response.json();
 
     const sorted = data.sort((a, b) => b.price_change_percentage_24h - a.price_change_percentage_24h);
@@ -76,7 +86,7 @@ app.get('/api/market-summary', async (req, res) => {
   }
 });
 
-// ✅ Safe wildcard route for SPA (no Markdown, no RegExp)
+// Wildcard route for frontend
 app.get('*', (req, res) => {
   const filePath = path.join(__dirname, 'public/index.html');
   if (fs.existsSync(filePath)) {
@@ -86,7 +96,7 @@ app.get('*', (req, res) => {
   }
 });
 
-// ✅ Start the server
+// Start server
 app.listen(PORT, () => {
   console.log(`✅ Server running at http://localhost:${PORT}`);
 });
