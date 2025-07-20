@@ -6,10 +6,10 @@ const app = express();
 
 const PORT = process.env.PORT || 3000;
 
-// Serve static files from 'public'
+// Serve static frontend files
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Endpoint for top 50 coins with full metrics
+// ✅ Fetch top coins with full metrics
 app.get('/api/crypto-data', async (req, res) => {
   const vs_currency = req.query.vs_currency || 'usd';
   const limit = parseInt(req.query.limit) || 50;
@@ -47,7 +47,7 @@ app.get('/api/crypto-data', async (req, res) => {
   }
 });
 
-// Endpoint for market sentiment summary
+// ✅ Market summary endpoint
 app.get('/api/market-summary', async (req, res) => {
   const vs_currency = req.query.vs_currency || 'usd';
   const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=${vs_currency}&order=market_cap_desc&per_page=50&page=1&sparkline=false`;
@@ -76,7 +76,7 @@ app.get('/api/market-summary', async (req, res) => {
   }
 });
 
-// Safe fallback route to serve frontend or display error
+// ✅ Safe wildcard route for SPA (no Markdown, no RegExp)
 app.get('*', (req, res) => {
   const filePath = path.join(__dirname, 'public/index.html');
   if (fs.existsSync(filePath)) {
@@ -86,7 +86,7 @@ app.get('*', (req, res) => {
   }
 });
 
-// Start server
+// ✅ Start the server
 app.listen(PORT, () => {
-  console.log(`✅ Server running on http://localhost:${PORT}`);
+  console.log(`✅ Server running at http://localhost:${PORT}`);
 });
