@@ -1,132 +1,162 @@
-<!DOCTYPE html>
-<html>
+<!DOCTYPE html><html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Top 20 Coins from CoinGecko</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Crypto Market Dashboard</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/file-saver"></script>
   <style>
-    body { font-family: Arial, sans-serif; margin: 0 auto; padding: 1rem; max-width: 1000px; }
-    table { border-collapse: collapse; width: 100%; margin-top: 1rem; font-size: 0.95rem; }
-    th, td { padding: 8px; border: 1px solid #ccc; text-align: left; }
-    th { cursor: pointer; background: #f9f9f9; }
-    tr.positive td:nth-child(5), tr.positive td:nth-child(7) { color: green; }
-    tr.negative td:nth-child(5), tr.negative td:nth-child(7) { color: red; }
-    #export-btn, #currency-select { margin-top: 1rem; padding: 0.5rem 1rem; }
-    #controls { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 1rem; align-items: center; }
+    body { padding: 1rem; }
+    .table-responsive { max-height: 80vh; overflow-y: auto; }
+    .positive { color: green; }
+    .negative { color: red; }
+    .chart-container { height: 300px; margin-top: 1rem; }
+    .currency-selector, .refresh-interval { margin-right: 1rem; }
+    .summary-card { background: #f8f9fa; padding: 1rem; border-radius: 8px; box-shadow: 0 0 6px rgba(0,0,0,0.1); margin-bottom: 1rem; }
   </style>
 </head>
 <body>
-  <h2>Top 20 Coins from CoinGecko</h2>
+  <div class="container">
+    <h2 class="mb-3 text-center">🚀 Crypto Market Dashboard (Top 50)</h2><div class="summary-card" id="summaryCard">
+  <strong>Market Summary:</strong>
+  <div id="summaryText">Loading...</div>
+  <div id="topGainers" class="mt-2"></div>
+  <div id="topLosers" class="mt-1"></div>
+</div>
 
-  <div id="controls">
-    <select id="currency-select">
+<div class="d-flex flex-wrap justify-content-between mb-3">
+  <div class="d-flex">
+    <select id="currency" class="form-select currency-selector">
       <option value="usd" selected>USD</option>
       <option value="eur">EUR</option>
       <option value="sgd">SGD</option>
       <option value="btc">BTC</option>
     </select>
-    <button id="export-btn">📥 Export CSV</button>
+    <select id="refreshInterval" class="form-select refresh-interval">
+      <option value="60000">Refresh: 60s</option>
+      <option value="120000">Refresh: 2min</option>
+      <option value="300000">Refresh: 5min</option>
+    </select>
   </div>
+  <button class="btn btn-primary" onclick="downloadCSV()">📥 Export CSV</button>
+</div>
 
-  <canvas id="priceChart" height="120"></canvas>
-
-  <table id="crypto-table">
-    <thead>
+<div class="table-responsive">
+  <table class="table table-bordered table-hover align-middle text-center" id="cryptoTable">
+    <thead class="table-light">
       <tr>
-        <th onclick="sortTable(0)">#</th>
-        <th onclick="sortTable(1)">Name</th>
-        <th onclick="sortTable(2)">Symbol</th>
-        <th onclick="sortTable(3)">Price</th>
-        <th onclick="sortTable(4)">24h %</th>
+        <th>#</th>
+        <th>Name</th>
+        <th>Symbol</th>
+        <th>Price</th>
+        <th>24h %</th>
         <th>ATH</th>
         <th>Drawdown</th>
+        <th>Market Cap</th>
+        <th>Volume (24h)</th>
+        <th>MC Change (24h)</th>
+        <th>Supply</th>
       </tr>
     </thead>
     <tbody></tbody>
   </table>
+</div>
 
-<script>
-let intervalId;
-let currentCurrency = 'usd';
+<div class="chart-container">
+  <canvas id="priceChart"></canvas>
+</div>
 
-function fetchAndRender(currency = 'usd') {
-  clearInterval(intervalId);
-  fetch(`/api/crypto-data?vs_currency=${currency}`)
-    .then(res => res.json())
-    .then(data => {
-      const tbody = document.querySelector('tbody');
-      tbody.innerHTML = '';
-      const labels = [], prices = [];
+  </div>  <script>
+    let intervalId;
+    const currencySelector = document.getElementById('currency');
+    const refreshSelector = document.getElementById('refreshInterval');
 
-      data.forEach(coin => {
-        const price = coin.price;
-        const change = coin.percent_change_24h?.toFixed(2) ?? '0.00';
-        const ath = coin.ath;
-        const drawdown = coin.drawdown;
-        const trendClass = parseFloat(change) >= 0 ? 'positive' : 'negative';
+    async function fetchData() {
+      const vs_currency = currencySelector.value;
+      const res = await fetch(`/api/crypto-data?vs_currency=${vs_currency}&limit=50`);
+      const data = await res.json();
+      updateTable(data);
+      updateChart(data.slice(0, 10));
+      fetchSummary();
+    }
 
-        const row = `<tr class="${trendClass}">
-          <td>${coin.rank}</td>
-          <td>${coin.name}</td>
-          <td>${coin.symbol}</td>
-          <td>${price.toFixed(6)}</td>
-          <td>${change}%</td>
-          <td>${ath.toFixed(6)}</td>
-          <td>${drawdown}%</td>
-        </tr>`;
+    async function fetchSummary() {
+      const vs_currency = currencySelector.value;
+      const res = await fetch(`/api/market-summary?vs_currency=${vs_currency}`);
+      const summary = await res.json();
 
-        tbody.insertAdjacentHTML('beforeend', row);
-        if (coin.rank <= 10) {
-          labels.push(coin.symbol);
-          prices.push(price);
-        }
+      document.getElementById("summaryText").innerText = summary.summary;
+      document.getElementById("topGainers").innerHTML = `Top Gainers: <span class='positive'>${summary.top_gainers.join(', ')}</span>`;
+      document.getElementById("topLosers").innerHTML = `Top Losers: <span class='negative'>${summary.top_losers.join(', ')}</span>`;
+    }
+
+    function updateTable(data) {
+      const tbody = document.querySelector("#cryptoTable tbody");
+      tbody.innerHTML = "";
+      data.forEach(row => {
+        const tr = document.createElement("tr");
+        const percentClass = row.percent_change_24h >= 0 ? 'positive' : 'negative';
+        const drawdownClass = row.drawdown >= 0 ? 'positive' : 'negative';
+        const mcapChangeClass = row.market_cap_change_24h >= 0 ? 'positive' : 'negative';
+
+        tr.innerHTML = `
+          <td>${row.rank}</td>
+          <td>${row.name}</td>
+          <td>${row.symbol}</td>
+          <td>$${row.price.toLocaleString()}</td>
+          <td class="${percentClass}">${row.percent_change_24h.toFixed(2)}%</td>
+          <td>$${row.ath.toLocaleString()}</td>
+          <td class="${drawdownClass}">${row.drawdown}%</td>
+          <td>$${(row.market_cap || 0).toLocaleString()}</td>
+          <td>$${(row.volume_24h || 0).toLocaleString()}</td>
+          <td class="${mcapChangeClass}">${row.market_cap_change_24h.toFixed(2)}%</td>
+          <td>${(row.circulating_supply || 0).toLocaleString()} / ${(row.total_supply || 0).toLocaleString()}</td>
+        `;
+        tbody.appendChild(tr);
       });
+    }
 
-      new Chart(document.getElementById('priceChart'), {
+    function downloadCSV() {
+      const rows = Array.from(document.querySelectorAll("table tr"))
+        .map(row => Array.from(row.children).map(cell => cell.innerText).join(","))
+        .join("\n");
+      const blob = new Blob([rows], { type: "text/csv" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "crypto_dashboard.csv";
+      link.click();
+    }
+
+    let priceChart;
+    function updateChart(data) {
+      const ctx = document.getElementById("priceChart").getContext("2d");
+      if (priceChart) priceChart.destroy();
+      priceChart = new Chart(ctx, {
         type: 'bar',
         data: {
-          labels,
-          datasets: [{ label: `Top 10 Prices (${currency.toUpperCase()})`, data: prices }]
+          labels: data.map(c => c.symbol),
+          datasets: [{
+            label: 'Price',
+            data: data.map(c => c.price),
+            backgroundColor: 'rgba(54, 162, 235, 0.6)',
+          }]
         },
         options: {
           responsive: true,
-          plugins: { legend: { display: false } }
+          scales: {
+            y: { beginAtZero: true }
+          }
         }
       });
+    }
+
+    currencySelector.addEventListener('change', fetchData);
+    refreshSelector.addEventListener('change', () => {
+      clearInterval(intervalId);
+      intervalId = setInterval(fetchData, parseInt(refreshSelector.value));
     });
 
-  intervalId = setInterval(() => fetchAndRender(currentCurrency), 60000);
-}
-
-function sortTable(colIndex) {
-  const table = document.getElementById("crypto-table");
-  const rows = Array.from(table.rows).slice(1);
-  const sorted = rows.sort((a, b) => {
-    const valA = a.cells[colIndex].innerText.replace(/[^\\d.-]/g, '');
-    const valB = b.cells[colIndex].innerText.replace(/[^\\d.-]/g, '');
-    return parseFloat(valA) - parseFloat(valB);
-  });
-  rows.forEach(row => table.tBodies[0].appendChild(row));
-}
-
-document.getElementById("export-btn").onclick = () => {
-  let csv = "Rank,Name,Symbol,Price,24h%,ATH,Drawdown\\n";
-  document.querySelectorAll("tbody tr").forEach(row => {
-    const cols = [...row.children].map(td => td.innerText);
-    csv += cols.join(",") + "\\n";
-  });
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  saveAs(blob, `top20-crypto-${currentCurrency}.csv`);
-};
-
-document.getElementById("currency-select").onchange = e => {
-  currentCurrency = e.target.value;
-  fetchAndRender(currentCurrency);
-};
-
-fetchAndRender(currentCurrency);
-</script>
-</body>
+    fetchData();
+    intervalId = setInterval(fetchData, parseInt(refreshSelector.value));
+  </script></body>
 </html>
