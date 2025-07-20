@@ -2,7 +2,7 @@ const express = require('express'); const fetch = require('node-fetch'); const p
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-app.get('/api/crypto-data', async (req, res) => { const vs_currency = req.query.vs_currency || 'usd'; const limit = parseInt(req.query.limit) || 50; const url = https://api.coingecko.com/api/v3/coins/markets?vs_currency=${vs_currency}&order=market_cap_desc&per_page=${limit}&page=1&sparkline=false;
+app.get('/api/crypto-data', async (req, res) => { const vs_currency = req.query.vs_currency || 'usd'; const limit = parseInt(req.query.limit) || 50; const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=${vs_currency}&order=market_cap_desc&per_page=${limit}&page=1&sparkline=false`;
 
 try { const response = await fetch(url); const data = await response.json();
 
