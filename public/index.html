@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Top 20 Coins from CoinGecko</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/file-saver"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0 auto; padding: 1rem; max-width: 1000px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 1rem; font-size: 0.95rem; }
+    th, td { padding: 8px; border: 1px solid #ccc; text-align: left; }
+    th { cursor: pointer; background: #f9f9f9; }
+    tr.positive td:nth-child(5), tr.positive td:nth-child(7) { color: green; }
+    tr.negative td:nth-child(5), tr.negative td:nth-child(7) { color: red; }
+    #export-btn, #currency-select { margin-top: 1rem; padding: 0.5rem 1rem; }
+    #controls { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 1rem; align-items: center; }
+  </style>
+</head>
+<body>
+  <h2>Top 20 Coins from CoinGecko</h2>
+
+  <div id="controls">
+    <select id="currency-select">
+      <option value="usd" selected>USD</option>
+      <option value="eur">EUR</option>
+      <option value="sgd">SGD</option>
+      <option value="btc">BTC</option>
+    </select>
+    <button id="export-btn">📥 Export CSV</button>
+  </div>
+
+  <canvas id="priceChart" height="120"></canvas>
+
+  <table id="crypto-table">
+    <thead>
+      <tr>
+        <th onclick="sortTable(0)">#</th>
+        <th onclick="sortTable(1)">Name</th>
+        <th onclick="sortTable(2)">Symbol</th>
+        <th onclick="sortTable(3)">Price</th>
+        <th onclick="sortTable(4)">24h %</th>
+        <th>ATH</th>
+        <th>Drawdown</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+<script>
+let intervalId;
+let currentCurrency = 'usd';
+
+function fetchAndRender(currency = 'usd') {
+  clearInterval(intervalId);
+  fetch(`/api/crypto-data?vs_currency=${currency}`)
+    .then(res => res.json())
+    .then(data => {
+      const tbody = document.querySelector('tbody');
+      tbody.innerHTML = '';
+      const labels = [], prices = [];
+
+      data.forEach(coin => {
+        const price = coin.price;
+        const change = coin.percent_change_24h?.toFixed(2) ?? '0.00';
+        const ath = coin.ath;
+        const drawdown = coin.drawdown;
+        const trendClass = parseFloat(change) >= 0 ? 'positive' : 'negative';
+
+        const row = `<tr class="${trendClass}">
+          <td>${coin.rank}</td>
+          <td>${coin.name}</td>
+          <td>${coin.symbol}</td>
+          <td>${price.toFixed(6)}</td>
+          <td>${change}%</td>
+          <td>${ath.toFixed(6)}</td>
+          <td>${drawdown}%</td>
+        </tr>`;
+
+        tbody.insertAdjacentHTML('beforeend', row);
+        if (coin.rank <= 10) {
+          labels.push(coin.symbol);
+          prices.push(price);
+        }
+      });
+
+      new Chart(document.getElementById('priceChart'), {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{ label: `Top 10 Prices (${currency.toUpperCase()})`, data: prices }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } }
+        }
+      });
+    });
+
+  intervalId = setInterval(() => fetchAndRender(currentCurrency), 60000);
+}
+
+function sortTable(colIndex) {
+  const table = document.getElementById("crypto-table");
+  const rows = Array.from(table.rows).slice(1);
+  const sorted = rows.sort((a, b) => {
+    const valA = a.cells[colIndex].innerText.replace(/[^\\d.-]/g, '');
+    const valB = b.cells[colIndex].innerText.replace(/[^\\d.-]/g, '');
+    return parseFloat(valA) - parseFloat(valB);
+  });
+  rows.forEach(row => table.tBodies[0].appendChild(row));
+}
+
+document.getElementById("export-btn").onclick = () => {
+  let csv = "Rank,Name,Symbol,Price,24h%,ATH,Drawdown\\n";
+  document.querySelectorAll("tbody tr").forEach(row => {
+    const cols = [...row.children].map(td => td.innerText);
+    csv += cols.join(",") + "\\n";
+  });
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  saveAs(blob, `top20-crypto-${currentCurrency}.csv`);
+};
+
+document.getElementById("currency-select").onchange = e => {
+  currentCurrency = e.target.value;
+  fetchAndRender(currentCurrency);
+};
+
+fetchAndRender(currentCurrency);
+</script>
+</body>
+</html>
