@@ -34,12 +34,15 @@
       <th data-sort="market_cap">Market Cap</th>
       <th data-sort="volume">Volume</th>
       <th data-sort="trend_30d">30D Trend</th>
-      <th data-sort="sentiment">Sentiment</th>
+      <th data-sort="galaxy_score">Galaxy Score</th>
+      <th data-sort="average_sentiment">Avg Sentiment</th>
     </tr></thead>
     <tbody></tbody>
   </table>  <script>
     let exchangeRates = { USD: 1 };
     let globalData = [];
+    let globalATHMap = {};
+    let globalSentiment = {};
     let currentSortKey = 'rank';
     let currentSortDir = 1;
 
@@ -70,8 +73,7 @@
         const data = await res.json();
         return Object.fromEntries(data.map(c => [c.symbol.toUpperCase(), {
           ath: c.ath || 0,
-          trend_30d: c.price_change_percentage_30d_in_currency || 0,
-          sentiment: c.sentiment_votes_up_percentage !== undefined ? c.sentiment_votes_up_percentage : 50
+          trend_30d: c.price_change_percentage_30d_in_currency || 0
         }]));
       } catch (err) {
         console.error('CoinGecko ATH fetch failed:', err);
@@ -79,7 +81,23 @@
       }
     }
 
-    function renderTable(data, cur, athMap) {
+    async function fetchLunarSentiment(symbols) {
+      try {
+        const key = 'YOUR_LUNARCRUSH_API_KEY';
+        const url = `https://api.lunarcrush.com/v2?data=market,social&key=${key}&symbol=${symbols.join(',')}`;
+        const res = await fetch(url);
+        const json = await res.json();
+        return Object.fromEntries(json.data.map(c => [c.symbol.toUpperCase(), {
+          galaxy_score: c.galaxy_score,
+          average_sentiment: c.average_sentiment
+        }]));
+      } catch (err) {
+        console.error('LunarCrush fetch failed:', err);
+        return {};
+      }
+    }
+
+    function renderTable(data, cur, athMap, sentimentMap) {
       const tbody = document.querySelector('tbody');
       tbody.innerHTML = '';
       data.forEach(c => {
@@ -87,7 +105,9 @@
         const price = (c.price * rate).toLocaleString();
         const athRaw = athMap[c.symbol.toUpperCase()]?.ath || 0;
         const trend30 = athMap[c.symbol.toUpperCase()]?.trend_30d?.toFixed(2) || '-';
-        const sentiment = athMap[c.symbol.toUpperCase()]?.sentiment?.toFixed(0) || '-';
+        const sentiment = sentimentMap[c.symbol.toUpperCase()] || {};
+        const gs = sentiment.galaxy_score?.toFixed(0) || '-';
+        const as = sentiment.average_sentiment?.toFixed(2) || '-';
         const ath = (athRaw * rate).toLocaleString();
         const drawdown = athRaw ? (((c.price - athRaw) * 100) / athRaw).toFixed(2) : '-';
         const marketCap = (c.market_cap * rate / 1e9).toFixed(2) + 'B';
@@ -108,48 +128,32 @@
             <td>${cur} ${marketCap}</td>
             <td>${cur} ${volume}</td>
             <td class="${trendClass}">${trend30}%</td>
-            <td>${sentiment}% 👍</td>
+            <td>${gs}</td>
+            <td>${as}</td>
           </tr>
         `);
       });
     }
 
-    function sortData(data, key, dir) {
-      return data.sort((a, b) => {
-        const aVal = key === 'name' ? a.name : a[key];
-        const bVal = key === 'name' ? b.name : b[key];
-        return (aVal > bVal ? 1 : -1) * dir;
-      });
-    }
-
-    document.querySelectorAll('th').forEach(th => {
-      th.addEventListener('click', () => {
-        const sortKey = th.dataset.sort;
-        if (currentSortKey === sortKey) currentSortDir *= -1;
-        else { currentSortKey = sortKey; currentSortDir = 1; }
-        const sorted = sortData(globalData, sortKey, currentSortDir);
-        renderTable(sorted, document.getElementById('currency-select').value.toUpperCase(), globalATHMap);
-      });
-    });
-
-    let globalATHMap = {};
-
     async function loadData() {
       const cur = document.getElementById('currency-select').value.toUpperCase();
       await fetchRates('USD');
-
       const res = await fetch(`/api/crypto-data?vs_currency=usd`);
       const data = await res.json();
-      const athMap = await fetchATHs(data.map(c => c.symbol), 'usd');
+      const symbols = data.map(c => c.symbol);
+      const athMap = await fetchATHs(symbols, 'usd');
+      const sentimentMap = await fetchLunarSentiment(symbols);
+
       globalData = data;
       globalATHMap = athMap;
+      globalSentiment = sentimentMap;
 
       const best = data.reduce((a, b) => a.percent_change_24h > b.percent_change_24h ? a : b);
       const worst = data.reduce((a, b) => a.percent_change_24h < b.percent_change_24h ? a : b);
       document.getElementById('summary').textContent = `Top 50 Market View in ${cur}`;
       document.getElementById('trend').textContent = `📈 Best: ${best.name} +${best.percent_change_24h.toFixed(2)}% | 📉 Worst: ${worst.name} ${worst.percent_change_24h.toFixed(2)}%`;
 
-      renderTable(data, cur, athMap);
+      renderTable(data, cur, athMap, sentimentMap);
     }
 
     document.getElementById('currency-select').addEventListener('change', loadData);
