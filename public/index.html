@@ -1,148 +1,162 @@
 <!DOCTYPE html><html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Crypto Dashboard</title>
   <style>
-    body { font-family: Arial; background: #fff; color: #111; margin:20px; }
-    #currency-select {display: block; margin:0 auto 10px; font-size: 1rem; padding: 4px;}
-    table { width:100%; border-collapse: collapse; font-size: 0.9rem; }
-    th, td { padding: 6px; text-align:right; border-bottom:1px solid #ccc; cursor: pointer; }
-    .name { text-align:left; }
-    .pos { color: green; } .neg { color: red; }
-    #summary, #trend { text-align:center; margin-bottom:1rem; font-weight: bold; }
+    body {
+      font-family: sans-serif;
+      background-color: white;
+      padding: 1rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+    th, td {
+      padding: 0.5rem;
+      text-align: left;
+      border-bottom: 1px solid #ccc;
+    }
+    th {
+      cursor: pointer;
+    }
+    .green { color: green; }
+    .red { color: red; }
+    .header {
+      margin-bottom: 1rem;
+    }
+    .currency-selector {
+      margin-bottom: 1rem;
+    }
   </style>
 </head>
 <body>
-  <h1>📊 Top 50 Cryptos</h1>
-  <select id="currency-select">
-    <option value="usd">USD</option>
-    <option value="eur">EUR</option>
-    <option value="sgd">SGD</option>
-    <option value="chf">CHF</option>
-  </select>
-  <div id="summary">Loading...</div>
-  <div id="trend"></div>
-  <table>
-    <thead><tr>
-      <th>#</th>
-      <th class="name">Name</th>
-      <th>Price</th>
-      <th>24h%</th>
-      <th>ATH</th>
-      <th>Drawdown</th>
-      <th>Market Cap</th>
-      <th>Volume</th>
-      <th>30D Trend</th>
-      <th>Galaxy Score</th>
-      <th>Avg Sentiment</th>
-    </tr></thead>
+  <div class="header">
+    <h2>Top 50 Crypto Market Overview</h2>
+    <p id="summary"></p>
+  </div>  <div class="currency-selector">
+    <label for="currency">Select Currency: </label>
+    <select id="currency">
+      <option value="usd">USD</option>
+      <option value="eur">EUR</option>
+      <option value="sgd">SGD</option>
+      <option value="chf">CHF</option>
+    </select>
+  </div>  <table id="crypto-table">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Name</th>
+        <th>Symbol</th>
+        <th>Price</th>
+        <th>24h %</th>
+        <th>Market Cap</th>
+        <th>Volume</th>
+        <th>ATH</th>
+        <th>Δ ATH</th>
+        <th>30D Trend</th>
+        <th>Galaxy Score</th>
+        <th>Sentiment</th>
+      </tr>
+    </thead>
     <tbody></tbody>
   </table>  <script>
-    let exchangeRates = { USD: 1 };
+    const tableBody = document.querySelector("#crypto-table tbody");
+    const currencySelector = document.getElementById("currency");
+    const summary = document.getElementById("summary");
 
-    async function fetchRates(base = 'USD') {
-      try {
-        const res = await fetch(`https://open.er-api.com/v6/latest/${base}`);
-        const data = await res.json();
-        exchangeRates = data.rates;
-      } catch (e) {
-        console.error('Failed to fetch exchange rates:', e);
-        exchangeRates = { USD: 1 };
-      }
+    async function fetchExchangeRates() {
+      const res = await fetch("https://open.er-api.com/v6/latest/USD");
+      const json = await res.json();
+      return json.rates;
     }
 
-    async function fetchATHs(symbols, vs_currency) {
-      const idMap = {
-        btc: 'bitcoin', eth: 'ethereum', sol: 'solana', bnb: 'binancecoin', ada: 'cardano',
-        xrp: 'ripple', doge: 'dogecoin', dot: 'polkadot', link: 'chainlink', matic: 'polygon',
-        trx: 'tron', ltc: 'litecoin', avax: 'avalanche-2', xlm: 'stellar', uni: 'uniswap',
-        near: 'near', etc: 'ethereum-classic', fil: 'filecoin', atom: 'cosmos', egld: 'multiversx',
-        sui: 'sui'
-      };
-      const ids = symbols.map(s => idMap[s.toLowerCase()]).filter(Boolean);
-      if (ids.length === 0) return {};
-      try {
-        const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=${vs_currency}&ids=${ids.join(',')}&price_change_percentage=30d`;
-        const res = await fetch(url);
-        const data = await res.json();
-        return Object.fromEntries(data.map(c => [c.symbol.toUpperCase(), {
-          ath: c.ath || 0,
-          trend_30d: c.price_change_percentage_30d_in_currency || 0
-        }]));
-      } catch (err) {
-        console.error('CoinGecko ATH fetch failed:', err);
-        return {};
-      }
+    async function fetchATH(ids) {
+      const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids.join(",")}`;
+      const res = await fetch(url);
+      return await res.json();
     }
 
     async function fetchLunarSentiment(symbols) {
-      try {
-        const res = await fetch(`/api/lunar-sentiment?symbols=${symbols.join(',')}`);
-        const json = await res.json();
-        return json;
-      } catch (err) {
-        console.error('LunarCrush fetch failed:', err);
-        return {};
-      }
-    }
-
-    function renderTable(data, cur, athMap, sentimentMap) {
-      const tbody = document.querySelector('tbody');
-      tbody.innerHTML = '';
-      data.forEach(c => {
-        const rate = exchangeRates[cur] || 1;
-        const price = (c.price * rate).toLocaleString();
-        const athRaw = athMap[c.symbol.toUpperCase()]?.ath || 0;
-        const trend30 = athMap[c.symbol.toUpperCase()]?.trend_30d?.toFixed(2) || '-';
-        const sentiment = sentimentMap[c.symbol.toUpperCase()] || {};
-        const gs = sentiment.galaxy_score?.toFixed(0) || '-';
-        const as = sentiment.average_sentiment?.toFixed(2) || '-';
-        const ath = (athRaw * rate).toLocaleString();
-        const drawdown = athRaw ? (((c.price - athRaw) * 100) / athRaw).toFixed(2) : '-';
-        const marketCap = (c.market_cap * rate / 1e9).toFixed(2) + 'B';
-        const volume = (c.volume_24h * rate / 1e9).toFixed(2) + 'B';
-        const change = c.percent_change_24h.toFixed(2);
-        const changeClass = change >= 0 ? 'pos' : 'neg';
-        const drawClass = drawdown >= 0 ? 'pos' : 'neg';
-        const trendClass = trend30 >= 0 ? 'pos' : 'neg';
-
-        tbody.insertAdjacentHTML('beforeend', `
-          <tr>
-            <td>${c.rank}</td>
-            <td class="name">${c.name} (${c.symbol})</td>
-            <td>${cur} ${price}</td>
-            <td class="${changeClass}">${change}%</td>
-            <td>${cur} ${ath}</td>
-            <td class="${drawClass}">${drawdown}%</td>
-            <td>${cur} ${marketCap}</td>
-            <td>${cur} ${volume}</td>
-            <td class="${trendClass}">${trend30}%</td>
-            <td>${gs}</td>
-            <td>${as}</td>
-          </tr>
-        `);
+      const key = "n6p13xwd3wq6523wq2qr24d9gmdd7c9psm3ujs99";
+      const url = `https://api.lunarcrush.com/v2?data=market,social&key=${key}&symbol=${symbols.join(",")}`;
+      const res = await fetch(url);
+      const json = await res.json();
+      const map = {};
+      json.data.forEach(c => {
+        map[c.symbol.toUpperCase()] = {
+          galaxy_score: c.galaxy_score,
+          average_sentiment: c.average_sentiment
+        };
       });
+      return map;
     }
 
-    async function loadData() {
-      const cur = document.getElementById('currency-select').value.toUpperCase();
-      await fetchRates('USD');
-      const res = await fetch(`/api/crypto-data?vs_currency=usd`);
+    async function loadData(currency = "usd") {
+      tableBody.innerHTML = "<tr><td colspan='12'>Loading...</td></tr>";
+      const res = await fetch(`/api/crypto-data?vs_currency=${currency}&limit=50`);
       const data = await res.json();
+
+      const ids = data.map(c => c.name.toLowerCase().replace(/ /g, "-")).slice(0, 50);
       const symbols = data.map(c => c.symbol);
-      const athMap = await fetchATHs(symbols, 'usd');
-      const sentimentMap = await fetchLunarSentiment(symbols);
 
-      const best = data.reduce((a, b) => a.percent_change_24h > b.percent_change_24h ? a : b);
-      const worst = data.reduce((a, b) => a.percent_change_24h < b.percent_change_24h ? a : b);
-      document.getElementById('summary').textContent = `Top 50 Market View in ${cur}`;
-      document.getElementById('trend').textContent = `📈 Best: ${best.name} +${best.percent_change_24h.toFixed(2)}% | 📉 Worst: ${worst.name} ${worst.percent_change_24h.toFixed(2)}%`;
+      const [athData, sentimentData, rates] = await Promise.all([
+        fetchATH(ids),
+        fetchLunarSentiment(symbols),
+        fetchExchangeRates()
+      ]);
 
-      renderTable(data, cur, athMap, sentimentMap);
+      const rate = rates[currency.toUpperCase()] || 1;
+      tableBody.innerHTML = "";
+
+      let bestCoin = null;
+      let bestPerf = -Infinity;
+
+      data.forEach((coin, i) => {
+        const athCoin = athData.find(c => c.symbol.toLowerCase() === coin.symbol.toLowerCase());
+        const sentiment = sentimentData[coin.symbol.toUpperCase()] || {};
+        const ath = athCoin?.ath || 0;
+        const deltaATH = ath ? ((coin.price / ath - 1) * 100).toFixed(2) : "-";
+        const trend30d = athCoin?.price_change_percentage_30d_in_currency?.toFixed(2) || "-";
+
+        const price = (coin.price * rate).toFixed(2);
+        const marketCap = (coin.market_cap * rate / 1e9).toFixed(2);
+        const volume = (coin.volume_24h * rate / 1e9).toFixed(2);
+        const change24h = coin.percent_change_24h?.toFixed(2);
+
+        if (trend30d !== "-" && parseFloat(trend30d) > bestPerf) {
+          bestPerf = parseFloat(trend30d);
+          bestCoin = coin.name;
+        }
+
+        const row = `
+          <tr>
+            <td>${i + 1}</td>
+            <td>${coin.name}</td>
+            <td>${coin.symbol}</td>
+            <td>${price} ${currency.toUpperCase()}</td>
+            <td class="${change24h >= 0 ? 'green' : 'red'}">${change24h}%</td>
+            <td>${marketCap} B</td>
+            <td>${volume} B</td>
+            <td>${ath.toFixed(2)}</td>
+            <td class="${deltaATH < 0 ? 'red' : 'green'}">${deltaATH}%</td>
+            <td class="${trend30d < 0 ? 'red' : 'green'}">${trend30d}%</td>
+            <td>${sentiment.galaxy_score ?? '-'}</td>
+            <td>${sentiment.average_sentiment ?? '-'}</td>
+          </tr>
+        `;
+        tableBody.innerHTML += row;
+      });
+
+      summary.textContent = `Best 30-day trend: ${bestCoin} (+${bestPerf}%)`;
     }
 
-    document.getElementById('currency-select').addEventListener('change', loadData);
+    currencySelector.addEventListener("change", () => {
+      loadData(currencySelector.value);
+    });
+
     loadData();
   </script></body>
 </html>
