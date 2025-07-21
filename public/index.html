@@ -1,137 +1,159 @@
 <!DOCTYPE html><html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Crypto Dashboard</title>
   <style>
     body {
-      font-family: Arial, sans-serif;
+      font-family: sans-serif;
       background: white;
-      color: #333;
       margin: 0;
-      padding: 0 10px;
+      padding: 1rem;
     }
-    h1, h2 {
-      text-align: center;
+    header {
+      margin-bottom: 1rem;
     }
-    .header {
-      margin: 20px 0;
-      padding: 10px;
-      text-align: center;
+    h1 {
+      font-size: 1.5rem;
+      margin-bottom: 0.5rem;
     }
-    .summary {
-      display: flex;
-      justify-content: space-around;
-      margin: 10px auto;
-      max-width: 800px;
+    .meta {
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
     }
-    .summary div {
-      padding: 5px 10px;
-      border: 1px solid #ccc;
-      border-radius: 5px;
+    select {
+      padding: 0.4rem;
+      font-size: 0.9rem;
     }
     table {
       width: 100%;
       border-collapse: collapse;
-      margin-top: 20px;
+      margin-top: 1rem;
     }
     th, td {
+      padding: 0.4rem 0.6rem;
       border: 1px solid #ccc;
-      padding: 6px 8px;
-      text-align: center;
-      font-size: 14px;
+      text-align: right;
+      font-size: 0.85rem;
     }
     th {
-      background: #eee;
+      background: #f4f4f4;
       cursor: pointer;
     }
-    .green {
-      color: green;
+    td.name {
+      text-align: left;
     }
-    .red {
-      color: red;
-    }
+    .pos { color: green; }
+    .neg { color: red; }
+    .highlight { font-weight: bold; }
   </style>
 </head>
 <body>
-  <h1>Crypto Market Overview</h1>
-  <div class="header">
-    <div class="summary">
-      <div id="fearGreed"></div>
-      <div id="topGainer"></div>
-      <div id="topLoser"></div>
+  <header>
+    <h1>Crypto Market Overview</h1>
+    <div class="meta">
+      <label for="currency">Select Currency: </label>
+      <select id="currency">
+        <option value="usd">USD</option>
+        <option value="eur">EUR</option>
+        <option value="sgd">SGD</option>
+      </select>
+      <span id="fearGreed"></span>
     </div>
-  </div>  <table id="cryptoTable">
+    <div class="meta" id="marketHighlights"></div>
+  </header>
+  <table id="cryptoTable">
     <thead>
       <tr>
-        <th>Rank</th>
         <th>Name</th>
         <th>Price</th>
-        <th>24h %</th>
-        <th>ATH Delta</th>
+        <th>ATH Δ</th>
         <th>30D Trend</th>
         <th>Sentiment</th>
-        <th>Market Cap</th>
-        <th>Volume</th>
+        <th>Galaxy Score</th>
+        <th>Market Cap (B)</th>
+        <th>24h Volume (B)</th>
+        <th>24h %</th>
+        <th>7d %</th>
       </tr>
     </thead>
     <tbody></tbody>
   </table>  <script>
-    const formatNumber = (num, decimals = 2) => {
-      if (num >= 1e9) return (num / 1e9).toFixed(decimals) + 'B';
-      if (num >= 1e6) return (num / 1e6).toFixed(decimals) + 'M';
-      return num.toFixed(decimals);
-    };
+    const tableBody = document.querySelector("#cryptoTable tbody");
+    const currencySelector = document.getElementById("currency");
+    const highlightsEl = document.getElementById("marketHighlights");
+    const fearGreedEl = document.getElementById("fearGreed");
+    let exchangeRate = 1;
 
-    async function loadData() {
-      const res = await fetch('/api/crypto-data');
-      const json = await res.json();
-      const coins = json.data;
-      const table = document.querySelector('#cryptoTable tbody');
-      table.innerHTML = '';
+    async function getExchangeRate(to) {
+      const res = await fetch(`https://api.exchangerate.host/latest?base=USD&symbols=${to}`);
+      const data = await res.json();
+      exchangeRate = data.rates[to.toUpperCase()] || 1;
+    }
 
-      let best = coins[0], worst = coins[0];
+    async function fetchFearGreed() {
+      try {
+        const res = await fetch("https://api.alternative.me/fng/?limit=1");
+        const data = await res.json();
+        fearGreedEl.textContent = `Fear & Greed Index: ${data.data[0].value} (${data.data[0].value_classification})`;
+      } catch {}
+    }
 
-      const symbols = coins.map(c => c.symbol.toUpperCase());
-      const sentimentRes = await fetch(`/api/sentiment?symbols=${symbols.join(',')}`);
-      const sentimentJson = await sentimentRes.json();
+    async function fetchData(currency = "usd") {
+      const res = await fetch(`/api/crypto-data?vs_currency=${currency}&limit=50`);
+      const cmc = await res.json();
+      const symbols = cmc.data.map(c => c.symbol.toUpperCase()).join(',');
+
+      const athRes = await fetch("https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=50&page=1&sparkline=false");
+      const cgk = await athRes.json();
+      const athMap = {};
+      cgk.forEach(c => athMap[c.symbol.toUpperCase()] = c.ath);
+
+      const sentimentRes = await fetch(`/api/sentiment?symbols=${symbols}`);
+      const sentimentRaw = await sentimentRes.json();
       const sentimentMap = {};
-      sentimentJson.rows.forEach(r => {
-        sentimentMap[r[0]] = r[1];
+      sentimentRaw.rows.forEach(row => {
+        sentimentMap[row[0].toUpperCase()] = row[1];
       });
 
-      for (const c of coins) {
-        if (c.quote.USD.percent_change_24h > best.quote.USD.percent_change_24h) best = c;
-        if (c.quote.USD.percent_change_24h < worst.quote.USD.percent_change_24h) worst = c;
+      const sorted = [...cmc.data].sort((a, b) => b.quote[currency.toUpperCase()].percent_change_24h - a.quote[currency.toUpperCase()].percent_change_24h);
+      const best = sorted[0];
+      const worst = sorted[sorted.length - 1];
+      highlightsEl.innerHTML = `Best 24h: <span class="highlight">${best.name} (${best.quote[currency.toUpperCase()].percent_change_24h.toFixed(2)}%)</span> | Worst: <span class="highlight">${worst.name} (${worst.quote[currency.toUpperCase()].percent_change_24h.toFixed(2)}%)</span>`;
 
-        const row = document.createElement('tr');
-        row.innerHTML = `
-          <td>${c.cmc_rank}</td>
-          <td>${c.name} (${c.symbol})</td>
-          <td>$${c.quote.USD.price.toFixed(2)}</td>
-          <td class="${c.quote.USD.percent_change_24h >= 0 ? 'green' : 'red'}">
-            ${c.quote.USD.percent_change_24h.toFixed(2)}%
-          </td>
-          <td>${c.ath ? ((1 - c.quote.USD.price / c.ath) * 100).toFixed(2) + '%' : '—'}</td>
-          <td>${c.last30d || '—'}</td>
-          <td>${sentimentMap[c.symbol.toUpperCase()]?.toFixed(2) || '—'}</td>
-          <td>$${formatNumber(c.quote.USD.market_cap)}</td>
-          <td>$${formatNumber(c.quote.USD.volume_24h)}</td>
+      tableBody.innerHTML = "";
+      cmc.data.forEach(coin => {
+        const q = coin.quote[currency.toUpperCase()];
+        const ath = athMap[coin.symbol] || q.price;
+        const athDelta = ((q.price - ath) / ath * 100).toFixed(2);
+        const sentiment = sentimentMap[coin.symbol.toUpperCase()] ?? "-";
+
+        tableBody.innerHTML += `
+          <tr>
+            <td class="name">${coin.name}</td>
+            <td>${(q.price * exchangeRate).toFixed(2)}</td>
+            <td class="${athDelta < 0 ? 'neg' : 'pos'}">${athDelta}%</td>
+            <td>-</td>
+            <td>${sentiment}</td>
+            <td>-</td>
+            <td>${(q.market_cap / 1e9).toFixed(2)}</td>
+            <td>${(q.volume_24h / 1e9).toFixed(2)}</td>
+            <td class="${q.percent_change_24h < 0 ? 'neg' : 'pos'}">${q.percent_change_24h.toFixed(2)}%</td>
+            <td class="${q.percent_change_7d < 0 ? 'neg' : 'pos'}">${q.percent_change_7d.toFixed(2)}%</td>
+          </tr>
         `;
-        table.appendChild(row);
-      }
-
-      document.getElementById('topGainer').textContent = `Top Gainer: ${best.name} (${best.quote.USD.percent_change_24h.toFixed(2)}%)`;
-      document.getElementById('topLoser').textContent = `Top Loser: ${worst.name} (${worst.quote.USD.percent_change_24h.toFixed(2)}%)`;
+      });
     }
 
-    async function loadFearGreed() {
-      const res = await fetch('https://api.alternative.me/fng/');
-      const json = await res.json();
-      document.getElementById('fearGreed').textContent = `Fear & Greed Index: ${json.data[0].value} (${json.data[0].value_classification})`;
-    }
+    currencySelector.addEventListener("change", async e => {
+      await getExchangeRate(e.target.value);
+      fetchData(e.target.value);
+    });
 
-    loadData();
-    loadFearGreed();
+    (async () => {
+      await getExchangeRate("usd");
+      await fetchFearGreed();
+      await fetchData("usd");
+    })();
   </script></body>
 </html>
