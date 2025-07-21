@@ -25,26 +25,21 @@
   <div id="trend"></div>
   <table>
     <thead><tr>
-      <th data-sort="rank">#</th>
-      <th class="name" data-sort="name">Name</th>
-      <th data-sort="price">Price</th>
-      <th data-sort="change">24h%</th>
-      <th data-sort="ath">ATH</th>
-      <th data-sort="drawdown">Drawdown</th>
-      <th data-sort="market_cap">Market Cap</th>
-      <th data-sort="volume">Volume</th>
-      <th data-sort="trend_30d">30D Trend</th>
-      <th data-sort="galaxy_score">Galaxy Score</th>
-      <th data-sort="average_sentiment">Avg Sentiment</th>
+      <th>#</th>
+      <th class="name">Name</th>
+      <th>Price</th>
+      <th>24h%</th>
+      <th>ATH</th>
+      <th>Drawdown</th>
+      <th>Market Cap</th>
+      <th>Volume</th>
+      <th>30D Trend</th>
+      <th>Galaxy Score</th>
+      <th>Avg Sentiment</th>
     </tr></thead>
     <tbody></tbody>
   </table>  <script>
     let exchangeRates = { USD: 1 };
-    let globalData = [];
-    let globalATHMap = {};
-    let globalSentiment = {};
-    let currentSortKey = 'rank';
-    let currentSortDir = 1;
 
     async function fetchRates(base = 'USD') {
       try {
@@ -83,14 +78,9 @@
 
     async function fetchLunarSentiment(symbols) {
       try {
-        const key = 'YOUR_LUNARCRUSH_API_KEY';
-        const url = `https://api.lunarcrush.com/v2?data=market,social&key=${key}&symbol=${symbols.join(',')}`;
-        const res = await fetch(url);
+        const res = await fetch(`/api/lunar-sentiment?symbols=${symbols.join(',')}`);
         const json = await res.json();
-        return Object.fromEntries(json.data.map(c => [c.symbol.toUpperCase(), {
-          galaxy_score: c.galaxy_score,
-          average_sentiment: c.average_sentiment
-        }]));
+        return json;
       } catch (err) {
         console.error('LunarCrush fetch failed:', err);
         return {};
@@ -143,10 +133,6 @@
       const symbols = data.map(c => c.symbol);
       const athMap = await fetchATHs(symbols, 'usd');
       const sentimentMap = await fetchLunarSentiment(symbols);
-
-      globalData = data;
-      globalATHMap = athMap;
-      globalSentiment = sentimentMap;
 
       const best = data.reduce((a, b) => a.percent_change_24h > b.percent_change_24h ? a : b);
       const worst = data.reduce((a, b) => a.percent_change_24h < b.percent_change_24h ? a : b);
