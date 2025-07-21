@@ -1,12 +1,11 @@
-<!DOCTYPE html>
-<html lang="en">
+<!DOCTYPE html><html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Crypto Dashboard</title>
   <style>
     body { font-family: Arial; background: #fff; color: #111; margin:20px; }
-    #currency-select {display: block; margin:0 auto 10px;}
+    #currency-select {display: block; margin:0 auto 10px; font-size: 1rem; padding: 4px;}
     table { width:100%; border-collapse: collapse; font-size: 0.9rem; }
     th, td { padding: 6px; text-align:right; border-bottom:1px solid #ccc; }
     .name { text-align:left; }
@@ -28,56 +27,80 @@
       <th>#</th><th class="name">Name</th><th>Price</th><th>24h%</th><th>ATH</th><th>Drawdown</th><th>Market Cap</th><th>Volume</th>
     </tr></thead>
     <tbody></tbody>
-  </table>
+  </table>  <script>
+    let exchangeRates = { USD: 1 };
 
-  <script>
-    let rates = { USD:1 };
+    async function fetchRates(base = 'USD') {
+      try {
+        const res = await fetch(`https://open.er-api.com/v6/latest/${base}`);
+        const data = await res.json();
+        exchangeRates = data.rates;
+      } catch (e) {
+        console.error('Failed to fetch exchange rates:', e);
+        exchangeRates = { USD: 1 };
+      }
+    }
 
-    async function fetchRates(base='USD') {
-      const res = await fetch(`https://open.er-api.com/v6/latest/${base}`);
-      const json = await res.json();
-      rates = json.rates;
+    async function fetchATHs(symbols, vs_currency) {
+      const idMap = {
+        btc: 'bitcoin', eth: 'ethereum', sol: 'solana', bnb: 'binancecoin', ada: 'cardano',
+        xrp: 'ripple', doge: 'dogecoin', dot: 'polkadot', link: 'chainlink', matic: 'polygon',
+        trx: 'tron', ltc: 'litecoin', avax: 'avalanche-2', xlm: 'stellar', uni: 'uniswap',
+        near: 'near', etc: 'ethereum-classic', fil: 'filecoin', atom: 'cosmos', egld: 'multiversx',
+        sui: 'sui'
+      };
+      const ids = symbols.map(s => idMap[s.toLowerCase()]).filter(Boolean);
+      if (ids.length === 0) return {};
+      try {
+        const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=${vs_currency}&ids=${ids.join(',')}`;
+        const res = await fetch(url);
+        const data = await res.json();
+        return Object.fromEntries(data.map(c => [c.symbol.toUpperCase(), c.ath || 0]));
+      } catch (err) {
+        console.error('CoinGecko ATH fetch failed:', err);
+        return {};
+      }
     }
 
     async function loadData() {
       const cur = document.getElementById('currency-select').value.toUpperCase();
       await fetchRates('USD');
-      await fetch('/api/crypto-data');
-      const data = await (await fetch('/api/crypto-data')).json();
-      const athMap = await (await fetchATHs(data.map(c=>c.symbol))).json ?
-        await fetchATHs(data.map(c=>c.symbol)) : {}; // same as before
 
-      document.getElementById('summary').textContent = 'Updated for ' + cur;
+      const res = await fetch(`/api/crypto-data?vs_currency=usd`);
+      const data = await res.json();
+      const athMap = await fetchATHs(data.map(c => c.symbol), 'usd');
 
+      document.getElementById('summary').textContent = `Top 50 Market View in ${cur}`;
       const tbody = document.querySelector('tbody');
       tbody.innerHTML = '';
 
       data.forEach(c => {
-        const rate = rates[cur] || 1;
+        const rate = exchangeRates[cur] || 1;
         const price = (c.price * rate).toLocaleString();
         const ath = (athMap[c.symbol.toUpperCase()] * rate).toLocaleString();
-        const drawdown = athMap[c.symbol.toUpperCase()] ? (((c.price - athMap[c.symbol])*100)/athMap[c.symbol]).toFixed(2)+'%' : '-';
-        const mcap = (c.market_cap*rate).toLocaleString();
-        const vol = (c.volume_24h*rate).toLocaleString();
-        const chg = c.percent_change_24h.toFixed(2);
-        const chgC = chg>=0?'pos':'neg';
+        const drawdown = athMap[c.symbol.toUpperCase()] ? (((c.price - athMap[c.symbol]) * 100) / athMap[c.symbol]).toFixed(2) : '-';
+        const marketCap = (c.market_cap * rate).toLocaleString();
+        const volume = (c.volume_24h * rate).toLocaleString();
+        const change = c.percent_change_24h.toFixed(2);
+        const changeClass = change >= 0 ? 'pos' : 'neg';
+        const drawClass = drawdown >= 0 ? 'pos' : 'neg';
 
         tbody.insertAdjacentHTML('beforeend', `
-        <tr>
-          <td>${c.rank}</td>
-          <td class="name">${c.name} (${c.symbol})</td>
-          <td>${cur} ${price}</td>
-          <td class="${chgC}">${chg}%</td>
-          <td>${cur} ${ath}</td>
-          <td class="${drawdown>=0?'pos':'neg'}">${drawdown}</td>
-          <td>${cur} ${mcap}</td>
-          <td>${cur} ${vol}</td>
-        </tr>`);
+          <tr>
+            <td>${c.rank}</td>
+            <td class="name">${c.name} (${c.symbol})</td>
+            <td>${cur} ${price}</td>
+            <td class="${changeClass}">${change}%</td>
+            <td>${cur} ${ath}</td>
+            <td class="${drawClass}">${drawdown}%</td>
+            <td>${cur} ${marketCap}</td>
+            <td>${cur} ${volume}</td>
+          </tr>
+        `);
       });
     }
 
     document.getElementById('currency-select').addEventListener('change', loadData);
     loadData();
-  </script>
-</body>
+  </script></body>
 </html>
