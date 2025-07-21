@@ -6,7 +6,7 @@ const app = express(); app.use(cors()); const PORT = process.env.PORT || 3000;
 
 // CoinMarketCap: Crypto Market Data Endpoint app.get('/api/crypto-data', async (req, res) => { const vs_currency = req.query.vs_currency || 'usd'; const limit = parseInt(req.query.limit) || 50;
 
-try { const response = await fetch(https://pro-api.coinmarketcap.com/v1/cryptocurrency/listings/latest?limit=${limit}&convert=${vs_currency.toUpperCase()}, { headers: { 'X-CMC_PRO_API_KEY': process.env.CMC_API_KEY } });
+try { const response = await fetch(`https://pro-api.coinmarketcap.com/v1/cryptocurrency/listings/latest?limit=${limit}&convert=${vs_currency.toUpperCase()}`, { headers: { 'X-CMC_PRO_API_KEY': process.env.CMC_API_KEY } });
 
 const data = await response.json();
 res.json(data);
