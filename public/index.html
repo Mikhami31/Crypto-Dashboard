@@ -7,10 +7,10 @@
     body { font-family: Arial; background: #fff; color: #111; margin:20px; }
     #currency-select {display: block; margin:0 auto 10px; font-size: 1rem; padding: 4px;}
     table { width:100%; border-collapse: collapse; font-size: 0.9rem; }
-    th, td { padding: 6px; text-align:right; border-bottom:1px solid #ccc; }
+    th, td { padding: 6px; text-align:right; border-bottom:1px solid #ccc; cursor: pointer; }
     .name { text-align:left; }
     .pos { color: green; } .neg { color: red; }
-    #summary { text-align:center; margin-bottom:1rem; }
+    #summary, #trend { text-align:center; margin-bottom:1rem; font-weight: bold; }
   </style>
 </head>
 <body>
@@ -22,13 +22,26 @@
     <option value="chf">CHF</option>
   </select>
   <div id="summary">Loading...</div>
+  <div id="trend"></div>
   <table>
     <thead><tr>
-      <th>#</th><th class="name">Name</th><th>Price</th><th>24h%</th><th>ATH</th><th>Drawdown</th><th>Market Cap</th><th>Volume</th>
+      <th data-sort="rank">#</th>
+      <th class="name" data-sort="name">Name</th>
+      <th data-sort="price">Price</th>
+      <th data-sort="change">24h%</th>
+      <th data-sort="ath">ATH</th>
+      <th data-sort="drawdown">Drawdown</th>
+      <th data-sort="market_cap">Market Cap</th>
+      <th data-sort="volume">Volume</th>
+      <th data-sort="trend_30d">30D Trend</th>
+      <th data-sort="sentiment">Sentiment</th>
     </tr></thead>
     <tbody></tbody>
   </table>  <script>
     let exchangeRates = { USD: 1 };
+    let globalData = [];
+    let currentSortKey = 'rank';
+    let currentSortDir = 1;
 
     async function fetchRates(base = 'USD') {
       try {
@@ -52,38 +65,37 @@
       const ids = symbols.map(s => idMap[s.toLowerCase()]).filter(Boolean);
       if (ids.length === 0) return {};
       try {
-        const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=${vs_currency}&ids=${ids.join(',')}`;
+        const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=${vs_currency}&ids=${ids.join(',')}&price_change_percentage=30d`;
         const res = await fetch(url);
         const data = await res.json();
-        return Object.fromEntries(data.map(c => [c.symbol.toUpperCase(), c.ath || 0]));
+        return Object.fromEntries(data.map(c => [c.symbol.toUpperCase(), {
+          ath: c.ath || 0,
+          trend_30d: c.price_change_percentage_30d_in_currency || 0,
+          sentiment: c.sentiment_votes_up_percentage !== undefined ? c.sentiment_votes_up_percentage : 50
+        }]));
       } catch (err) {
         console.error('CoinGecko ATH fetch failed:', err);
         return {};
       }
     }
 
-    async function loadData() {
-      const cur = document.getElementById('currency-select').value.toUpperCase();
-      await fetchRates('USD');
-
-      const res = await fetch(`/api/crypto-data?vs_currency=usd`);
-      const data = await res.json();
-      const athMap = await fetchATHs(data.map(c => c.symbol), 'usd');
-
-      document.getElementById('summary').textContent = `Top 50 Market View in ${cur}`;
+    function renderTable(data, cur, athMap) {
       const tbody = document.querySelector('tbody');
       tbody.innerHTML = '';
-
       data.forEach(c => {
         const rate = exchangeRates[cur] || 1;
         const price = (c.price * rate).toLocaleString();
-        const ath = (athMap[c.symbol.toUpperCase()] * rate).toLocaleString();
-        const drawdown = athMap[c.symbol.toUpperCase()] ? (((c.price - athMap[c.symbol]) * 100) / athMap[c.symbol]).toFixed(2) : '-';
-        const marketCap = (c.market_cap * rate).toLocaleString();
-        const volume = (c.volume_24h * rate).toLocaleString();
+        const athRaw = athMap[c.symbol.toUpperCase()]?.ath || 0;
+        const trend30 = athMap[c.symbol.toUpperCase()]?.trend_30d?.toFixed(2) || '-';
+        const sentiment = athMap[c.symbol.toUpperCase()]?.sentiment?.toFixed(0) || '-';
+        const ath = (athRaw * rate).toLocaleString();
+        const drawdown = athRaw ? (((c.price - athRaw) * 100) / athRaw).toFixed(2) : '-';
+        const marketCap = (c.market_cap * rate / 1e9).toFixed(2) + 'B';
+        const volume = (c.volume_24h * rate / 1e9).toFixed(2) + 'B';
         const change = c.percent_change_24h.toFixed(2);
         const changeClass = change >= 0 ? 'pos' : 'neg';
         const drawClass = drawdown >= 0 ? 'pos' : 'neg';
+        const trendClass = trend30 >= 0 ? 'pos' : 'neg';
 
         tbody.insertAdjacentHTML('beforeend', `
           <tr>
@@ -95,9 +107,49 @@
             <td class="${drawClass}">${drawdown}%</td>
             <td>${cur} ${marketCap}</td>
             <td>${cur} ${volume}</td>
+            <td class="${trendClass}">${trend30}%</td>
+            <td>${sentiment}% 👍</td>
           </tr>
         `);
       });
+    }
+
+    function sortData(data, key, dir) {
+      return data.sort((a, b) => {
+        const aVal = key === 'name' ? a.name : a[key];
+        const bVal = key === 'name' ? b.name : b[key];
+        return (aVal > bVal ? 1 : -1) * dir;
+      });
+    }
+
+    document.querySelectorAll('th').forEach(th => {
+      th.addEventListener('click', () => {
+        const sortKey = th.dataset.sort;
+        if (currentSortKey === sortKey) currentSortDir *= -1;
+        else { currentSortKey = sortKey; currentSortDir = 1; }
+        const sorted = sortData(globalData, sortKey, currentSortDir);
+        renderTable(sorted, document.getElementById('currency-select').value.toUpperCase(), globalATHMap);
+      });
+    });
+
+    let globalATHMap = {};
+
+    async function loadData() {
+      const cur = document.getElementById('currency-select').value.toUpperCase();
+      await fetchRates('USD');
+
+      const res = await fetch(`/api/crypto-data?vs_currency=usd`);
+      const data = await res.json();
+      const athMap = await fetchATHs(data.map(c => c.symbol), 'usd');
+      globalData = data;
+      globalATHMap = athMap;
+
+      const best = data.reduce((a, b) => a.percent_change_24h > b.percent_change_24h ? a : b);
+      const worst = data.reduce((a, b) => a.percent_change_24h < b.percent_change_24h ? a : b);
+      document.getElementById('summary').textContent = `Top 50 Market View in ${cur}`;
+      document.getElementById('trend').textContent = `📈 Best: ${best.name} +${best.percent_change_24h.toFixed(2)}% | 📉 Worst: ${worst.name} ${worst.percent_change_24h.toFixed(2)}%`;
+
+      renderTable(data, cur, athMap);
     }
 
     document.getElementById('currency-select').addEventListener('change', loadData);
