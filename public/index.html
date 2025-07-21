@@ -1,5 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
+<!DOCTYPE html><html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
@@ -8,8 +7,8 @@
     body {
       font-family: Arial, sans-serif;
       margin: 20px;
-      background-color: #111;
-      color: #eee;
+      background-color: #fff;
+      color: #111;
     }
     h1 {
       text-align: center;
@@ -19,6 +18,12 @@
       margin-bottom: 1rem;
       font-size: 1rem;
     }
+    #currency-select {
+      display: block;
+      margin: 0 auto 20px auto;
+      font-size: 1rem;
+      padding: 4px;
+    }
     table {
       width: 100%;
       border-collapse: collapse;
@@ -27,24 +32,30 @@
     th, td {
       padding: 6px;
       text-align: right;
-      border-bottom: 1px solid #333;
+      border-bottom: 1px solid #ccc;
     }
     th.name, td.name {
       text-align: left;
     }
     th {
-      background-color: #222;
+      background-color: #f0f0f0;
     }
     .pos {
-      color: #00ff99;
+      color: green;
     }
     .neg {
-      color: #ff5f5f;
+      color: red;
     }
   </style>
 </head>
 <body>
   <h1>📊 Top 50 Cryptos</h1>
+  <select id="currency-select">
+    <option value="usd">USD</option>
+    <option value="eur">EUR</option>
+    <option value="sgd">SGD</option>
+    <option value="chf">CHF</option>
+  </select>
   <div id="summary">Loading market summary...</div>
   <table id="crypto-table">
     <thead>
@@ -60,22 +71,41 @@
       </tr>
     </thead>
     <tbody></tbody>
-  </table>
-
-  <script>
-    async function loadData() {
+  </table>  <script>
+    async function fetchATHs(symbols) {
+      const idsMap = {
+        btc: 'bitcoin', eth: 'ethereum', sol: 'solana', bnb: 'binancecoin', ada: 'cardano',
+        xrp: 'ripple', doge: 'dogecoin', dot: 'polkadot', link: 'chainlink', matic: 'polygon',
+        trx: 'tron', ltc: 'litecoin', avax: 'avalanche-2', xlm: 'stellar', uni: 'uniswap',
+        near: 'near', etc: 'ethereum-classic', fil: 'filecoin', atom: 'cosmos', egld: 'multiversx',
+        sui: 'sui'
+      };
+      const ids = symbols.map(s => idsMap[s.toLowerCase()]).filter(Boolean);
+      const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids.join(',')}&order=market_cap_desc&per_page=50&page=1&sparkline=false`;
       try {
-        // Fetch crypto data
-        const cryptoRes = await fetch('/api/crypto-data');
+        const res = await fetch(url);
+        const data = await res.json();
+        return Object.fromEntries(data.map(c => [c.symbol.toUpperCase(), c.ath || 0]));
+      } catch (err) {
+        console.error('CoinGecko ATH fetch failed:', err);
+        return {};
+      }
+    }
+
+    async function loadData(currency = 'usd') {
+      try {
+        const cryptoRes = await fetch(`/api/crypto-data?vs_currency=${currency}`);
         const data = await cryptoRes.json();
+        const symbols = data.map(c => c.symbol);
+        const athMap = await fetchATHs(symbols);
 
         const tbody = document.querySelector('#crypto-table tbody');
         tbody.innerHTML = '';
 
-        data.forEach((coin, index) => {
+        data.forEach((coin) => {
           const price = coin.price.toLocaleString(undefined, { maximumFractionDigits: 2 });
-          const ath = coin.ath ? coin.ath.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '-';
-          const drawdown = coin.drawdown !== null ? `${coin.drawdown}%` : '-';
+          const ath = athMap[coin.symbol.toUpperCase()] || 0;
+          const drawdown = ath ? (((coin.price - ath) / ath) * 100).toFixed(2) : '-';
           const change = coin.percent_change_24h?.toFixed(2);
           const changeClass = change >= 0 ? 'pos' : 'neg';
 
@@ -83,33 +113,34 @@
             <tr>
               <td>${coin.rank}</td>
               <td class="name">${coin.name} (${coin.symbol})</td>
-              <td>$${price}</td>
+              <td>${currency.toUpperCase()} ${price}</td>
               <td class="${changeClass}">${change}%</td>
-              <td>$${ath}</td>
-              <td class="${coin.drawdown >= 0 ? 'pos' : 'neg'}">${drawdown}</td>
-              <td>$${Math.round(coin.market_cap).toLocaleString()}</td>
-              <td>$${Math.round(coin.volume_24h).toLocaleString()}</td>
+              <td>${ath ? ath.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '-'}</td>
+              <td class="${drawdown >= 0 ? 'pos' : 'neg'}">${drawdown}%</td>
+              <td>${currency.toUpperCase()} ${Math.round(coin.market_cap).toLocaleString()}</td>
+              <td>${currency.toUpperCase()} ${Math.round(coin.volume_24h).toLocaleString()}</td>
             </tr>
           `;
           tbody.insertAdjacentHTML('beforeend', row);
         });
 
-        // Fetch and display summary
-        const summaryRes = await fetch('/api/market-summary');
+        const summaryRes = await fetch(`/api/market-summary?vs_currency=${currency}`);
         const summary = await summaryRes.json();
         document.getElementById('summary').innerHTML = `
           <p>${summary.summary}</p>
           <p>🚀 Top Gainers: ${summary.top_gainers.join(', ')}</p>
           <p>📉 Top Losers: ${summary.top_losers.join(', ')}</p>
         `;
-
       } catch (err) {
         console.error('Error loading data:', err);
         document.getElementById('summary').textContent = '❌ Failed to load data.';
       }
     }
 
+    document.getElementById('currency-select').addEventListener('change', (e) => {
+      loadData(e.target.value);
+    });
+
     loadData();
-  </script>
-</body>
+  </script></body>
 </html>
