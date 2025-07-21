@@ -1,162 +1,137 @@
 <!DOCTYPE html><html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Crypto Dashboard</title>
   <style>
     body {
-      font-family: sans-serif;
-      background-color: white;
-      padding: 1rem;
+      font-family: Arial, sans-serif;
+      background: white;
+      color: #333;
+      margin: 0;
+      padding: 0 10px;
+    }
+    h1, h2 {
+      text-align: center;
+    }
+    .header {
+      margin: 20px 0;
+      padding: 10px;
+      text-align: center;
+    }
+    .summary {
+      display: flex;
+      justify-content: space-around;
+      margin: 10px auto;
+      max-width: 800px;
+    }
+    .summary div {
+      padding: 5px 10px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
     }
     table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 0.9rem;
+      margin-top: 20px;
     }
     th, td {
-      padding: 0.5rem;
-      text-align: left;
-      border-bottom: 1px solid #ccc;
+      border: 1px solid #ccc;
+      padding: 6px 8px;
+      text-align: center;
+      font-size: 14px;
     }
     th {
+      background: #eee;
       cursor: pointer;
     }
-    .green { color: green; }
-    .red { color: red; }
-    .header {
-      margin-bottom: 1rem;
+    .green {
+      color: green;
     }
-    .currency-selector {
-      margin-bottom: 1rem;
+    .red {
+      color: red;
     }
   </style>
 </head>
 <body>
+  <h1>Crypto Market Overview</h1>
   <div class="header">
-    <h2>Top 50 Crypto Market Overview</h2>
-    <p id="summary"></p>
-  </div>  <div class="currency-selector">
-    <label for="currency">Select Currency: </label>
-    <select id="currency">
-      <option value="usd">USD</option>
-      <option value="eur">EUR</option>
-      <option value="sgd">SGD</option>
-      <option value="chf">CHF</option>
-    </select>
-  </div>  <table id="crypto-table">
+    <div class="summary">
+      <div id="fearGreed"></div>
+      <div id="topGainer"></div>
+      <div id="topLoser"></div>
+    </div>
+  </div>  <table id="cryptoTable">
     <thead>
       <tr>
-        <th>#</th>
+        <th>Rank</th>
         <th>Name</th>
-        <th>Symbol</th>
         <th>Price</th>
         <th>24h %</th>
+        <th>ATH Delta</th>
+        <th>30D Trend</th>
+        <th>Sentiment</th>
         <th>Market Cap</th>
         <th>Volume</th>
-        <th>ATH</th>
-        <th>Δ ATH</th>
-        <th>30D Trend</th>
-        <th>Galaxy Score</th>
-        <th>Sentiment</th>
       </tr>
     </thead>
     <tbody></tbody>
   </table>  <script>
-    const tableBody = document.querySelector("#crypto-table tbody");
-    const currencySelector = document.getElementById("currency");
-    const summary = document.getElementById("summary");
+    const formatNumber = (num, decimals = 2) => {
+      if (num >= 1e9) return (num / 1e9).toFixed(decimals) + 'B';
+      if (num >= 1e6) return (num / 1e6).toFixed(decimals) + 'M';
+      return num.toFixed(decimals);
+    };
 
-    async function fetchExchangeRates() {
-      const res = await fetch("https://open.er-api.com/v6/latest/USD");
+    async function loadData() {
+      const res = await fetch('/api/crypto-data');
       const json = await res.json();
-      return json.rates;
-    }
+      const coins = json.data;
+      const table = document.querySelector('#cryptoTable tbody');
+      table.innerHTML = '';
 
-    async function fetchATH(ids) {
-      const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids.join(",")}`;
-      const res = await fetch(url);
-      return await res.json();
-    }
+      let best = coins[0], worst = coins[0];
 
-    async function fetchLunarSentiment(symbols) {
-      const key = "n6p13xwd3wq6523wq2qr24d9gmdd7c9psm3ujs99";
-      const url = `https://api.lunarcrush.com/v2?data=market,social&key=${key}&symbol=${symbols.join(",")}`;
-      const res = await fetch(url);
-      const json = await res.json();
-      const map = {};
-      json.data.forEach(c => {
-        map[c.symbol.toUpperCase()] = {
-          galaxy_score: c.galaxy_score,
-          average_sentiment: c.average_sentiment
-        };
+      const symbols = coins.map(c => c.symbol.toUpperCase());
+      const sentimentRes = await fetch(`/api/sentiment?symbols=${symbols.join(',')}`);
+      const sentimentJson = await sentimentRes.json();
+      const sentimentMap = {};
+      sentimentJson.rows.forEach(r => {
+        sentimentMap[r[0]] = r[1];
       });
-      return map;
-    }
 
-    async function loadData(currency = "usd") {
-      tableBody.innerHTML = "<tr><td colspan='12'>Loading...</td></tr>";
-      const res = await fetch(`/api/crypto-data?vs_currency=${currency}&limit=50`);
-      const data = await res.json();
+      for (const c of coins) {
+        if (c.quote.USD.percent_change_24h > best.quote.USD.percent_change_24h) best = c;
+        if (c.quote.USD.percent_change_24h < worst.quote.USD.percent_change_24h) worst = c;
 
-      const ids = data.map(c => c.name.toLowerCase().replace(/ /g, "-")).slice(0, 50);
-      const symbols = data.map(c => c.symbol);
-
-      const [athData, sentimentData, rates] = await Promise.all([
-        fetchATH(ids),
-        fetchLunarSentiment(symbols),
-        fetchExchangeRates()
-      ]);
-
-      const rate = rates[currency.toUpperCase()] || 1;
-      tableBody.innerHTML = "";
-
-      let bestCoin = null;
-      let bestPerf = -Infinity;
-
-      data.forEach((coin, i) => {
-        const athCoin = athData.find(c => c.symbol.toLowerCase() === coin.symbol.toLowerCase());
-        const sentiment = sentimentData[coin.symbol.toUpperCase()] || {};
-        const ath = athCoin?.ath || 0;
-        const deltaATH = ath ? ((coin.price / ath - 1) * 100).toFixed(2) : "-";
-        const trend30d = athCoin?.price_change_percentage_30d_in_currency?.toFixed(2) || "-";
-
-        const price = (coin.price * rate).toFixed(2);
-        const marketCap = (coin.market_cap * rate / 1e9).toFixed(2);
-        const volume = (coin.volume_24h * rate / 1e9).toFixed(2);
-        const change24h = coin.percent_change_24h?.toFixed(2);
-
-        if (trend30d !== "-" && parseFloat(trend30d) > bestPerf) {
-          bestPerf = parseFloat(trend30d);
-          bestCoin = coin.name;
-        }
-
-        const row = `
-          <tr>
-            <td>${i + 1}</td>
-            <td>${coin.name}</td>
-            <td>${coin.symbol}</td>
-            <td>${price} ${currency.toUpperCase()}</td>
-            <td class="${change24h >= 0 ? 'green' : 'red'}">${change24h}%</td>
-            <td>${marketCap} B</td>
-            <td>${volume} B</td>
-            <td>${ath.toFixed(2)}</td>
-            <td class="${deltaATH < 0 ? 'red' : 'green'}">${deltaATH}%</td>
-            <td class="${trend30d < 0 ? 'red' : 'green'}">${trend30d}%</td>
-            <td>${sentiment.galaxy_score ?? '-'}</td>
-            <td>${sentiment.average_sentiment ?? '-'}</td>
-          </tr>
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${c.cmc_rank}</td>
+          <td>${c.name} (${c.symbol})</td>
+          <td>$${c.quote.USD.price.toFixed(2)}</td>
+          <td class="${c.quote.USD.percent_change_24h >= 0 ? 'green' : 'red'}">
+            ${c.quote.USD.percent_change_24h.toFixed(2)}%
+          </td>
+          <td>${c.ath ? ((1 - c.quote.USD.price / c.ath) * 100).toFixed(2) + '%' : '—'}</td>
+          <td>${c.last30d || '—'}</td>
+          <td>${sentimentMap[c.symbol.toUpperCase()]?.toFixed(2) || '—'}</td>
+          <td>$${formatNumber(c.quote.USD.market_cap)}</td>
+          <td>$${formatNumber(c.quote.USD.volume_24h)}</td>
         `;
-        tableBody.innerHTML += row;
-      });
+        table.appendChild(row);
+      }
 
-      summary.textContent = `Best 30-day trend: ${bestCoin} (+${bestPerf}%)`;
+      document.getElementById('topGainer').textContent = `Top Gainer: ${best.name} (${best.quote.USD.percent_change_24h.toFixed(2)}%)`;
+      document.getElementById('topLoser').textContent = `Top Loser: ${worst.name} (${worst.quote.USD.percent_change_24h.toFixed(2)}%)`;
     }
 
-    currencySelector.addEventListener("change", () => {
-      loadData(currencySelector.value);
-    });
+    async function loadFearGreed() {
+      const res = await fetch('https://api.alternative.me/fng/');
+      const json = await res.json();
+      document.getElementById('fearGreed').textContent = `Fear & Greed Index: ${json.data[0].value} (${json.data[0].value_classification})`;
+    }
 
     loadData();
+    loadFearGreed();
   </script></body>
 </html>
